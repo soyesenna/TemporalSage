@@ -1,0 +1,22 @@
+{
+  "properties": [
+    {
+      "name": "temporal.sage.service-address",
+      "type": "java.lang.String",
+      "description": "Temporal service address.",
+      "defaultValue": "127.0.0.1:7233"
+    },
+    {
+      "name": "temporal.sage.namespace",
+      "type": "java.lang.String",
+      "description": "Temporal namespace.",
+      "defaultValue": "default"
+    },
+    {
+      "name": "temporal.sage.task-queue",
+      "type": "java.lang.String",
+      "description": "Temporal task queue name.",
+      "defaultValue": "SAGA_TASK_QUEUE"
+    }
+  ]
+} 
