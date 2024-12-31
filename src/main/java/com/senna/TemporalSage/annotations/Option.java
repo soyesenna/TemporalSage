@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.TYPE})
-public @interface ActivityOptions {
+public @interface Option {
 
   // Timeouts (초 단위, 혹은 java.time.Duration을 직접 쓸 수도 있음)
   long startToCloseTimeoutSeconds() default 0;
