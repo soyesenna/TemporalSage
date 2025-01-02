@@ -1,7 +1,6 @@
 package com.senna.TemporalSage.processor;
 
 import com.github.javaparser.StaticJavaParser;
-import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -9,49 +8,67 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.resolution.SymbolResolver;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
+import com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
 import com.google.auto.service.AutoService;
 import com.senna.TemporalSage.annotations.Determinism;
 import com.senna.TemporalSage.annotations.SageService;
 import com.senna.TemporalSage.annotations.Workflowable;
-import com.squareup.javapoet.*;
-import io.temporal.activity.ActivityInterface;
-import io.temporal.activity.ActivityOptions;
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.JavaFile;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeName;
+import com.squareup.javapoet.TypeSpec;
 import io.temporal.workflow.Saga;
-import io.temporal.workflow.Workflow;
 import io.temporal.workflow.WorkflowInterface;
 import io.temporal.workflow.WorkflowMethod;
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
-import javax.annotation.processing.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.Filer;
+import javax.annotation.processing.Messager;
+import javax.annotation.processing.ProcessingEnvironment;
+import javax.annotation.processing.Processor;
+import javax.annotation.processing.RoundEnvironment;
+import javax.annotation.processing.SupportedAnnotationTypes;
+import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.element.*;
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.Diagnostic.Kind;
-import org.springframework.aop.support.AopUtils;
 import org.springframework.stereotype.Component;
 
 /**
  * 수정된 SageProcessor 예시
  */
 @AutoService(Processor.class)
-@SupportedSourceVersion(SourceVersion.RELEASE_17)
+@SupportedSourceVersion(SourceVersion.RELEASE_21)
 @SupportedAnnotationTypes({"com.senna.TemporalSage.annotations.SageService"})
 public class SageProcessor extends AbstractProcessor {
 
@@ -59,7 +76,10 @@ public class SageProcessor extends AbstractProcessor {
   private Filer filer;
 
   private final List<Path> sourcePaths = new ArrayList<>();
+  private final List<Path> classPaths = new ArrayList<>();
   private CombinedTypeSolver combinedTypeSolver;
+
+  private int variableCount = 0;
 
   // "execute" -> "compensate"
   private static final Map<String, String> ACTIVITY_COMPENSATION_MAP = new HashMap<>();
@@ -82,12 +102,31 @@ public class SageProcessor extends AbstractProcessor {
       }
     }
 
+    String classPathOption = processingEnv.getOptions().get("classpath");
+    if (classPathOption != null) {
+      String[] paths = classPathOption.split(":");
+      for (String p : paths) {
+        classPaths.add(Paths.get(p));
+      }
+    }
+
     combinedTypeSolver = new CombinedTypeSolver();
     combinedTypeSolver.add(new ReflectionTypeSolver());
     for (Path sp : sourcePaths) {
       if (Files.exists(sp)) {
         combinedTypeSolver.add(new JavaParserTypeSolver(sp.toFile()));
       }
+    }
+
+    try {
+      for (Path cp : classPaths) {
+        if (Files.exists(cp)) {
+          combinedTypeSolver.add(new JarTypeSolver(cp.toFile()));
+        }
+      }
+    } catch (IOException e) {
+      messager.printMessage(Kind.ERROR, "Failed to add classpath" + e.getMessage());
+      e.printStackTrace();
     }
   }
 
@@ -120,7 +159,7 @@ public class SageProcessor extends AbstractProcessor {
                 parseAndAnalyzeMethod(sagaServiceType, methodElement, sagaActivityFields);
 
             // 생성된 코드 작성
-            generateWorkflowCode(sagaServiceType, methodElement, sagaActivityFields, result);
+            this.generateWorkflowCode(sagaServiceType, methodElement, sagaActivityFields, result);
           }
         }
       }
@@ -280,25 +319,25 @@ public class SageProcessor extends AbstractProcessor {
       ParsedMethodResult result
   ) {
     try {
+      messager.printMessage(Diagnostic.Kind.NOTE, "analyzeCall: " + call.toString());
       ResolvedMethodDeclaration rmd = call.resolve();
       String qName = rmd.getQualifiedName();
 
-      // 결정성 체크
-      if (!isDeterministic(rmd)) {
-        result.hasDeterminismError = true;
-        result.determinismErrors.add("Non-deterministic call: " + qName);
-      }
+      if (!detectActivityCall(call, sagaActivityFields, rmd, result)) {
+        // 결정성 체크
+        if (!isDeterministic(rmd)) {
+          result.hasDeterminismError = true;
+          result.determinismErrors.add("Non-deterministic call: " + qName);
+        }
 
-      // Temporal/Cadence
-      if (isTemporalDeterministicMethod(rmd)) {
-        // OK
-      } else if (isSystemNonDeterministicMethod(rmd)) {
-        result.hasDeterminismError = true;
-        result.determinismErrors.add("System call is non-deterministic: " + qName);
+        // Temporal/Cadence
+        if (isTemporalDeterministicMethod(rmd)) {
+          // OK
+        } else if (isSystemNonDeterministicMethod(rmd)) {
+          result.hasDeterminismError = true;
+          result.determinismErrors.add("System call is non-deterministic: " + qName);
+        }
       }
-
-      // Activity execute -> compensate
-      detectActivityCall(call, sagaActivityFields, rmd, result);
 
     } catch (UnsolvedSymbolException ex) {
       result.hasDeterminismError = true;
@@ -351,12 +390,26 @@ public class SageProcessor extends AbstractProcessor {
         || qName.equals("java.lang.System.nanoTime"));
   }
 
-  private void detectActivityCall(
+  private boolean detectActivityCall(
       MethodCallExpr call,
       List<VariableElement> sagaActivityFields,
       ResolvedMethodDeclaration rmd,
       ParsedMethodResult result
   ) {
+    StringBuilder sb = new StringBuilder();
+    if (!rmd.getReturnType().isVoid()) {
+      sb.append(rmd.getReturnType().describe()).append(" ").append(this.getVariableName()).append(" = ");
+    }
+
+    sb.append(call.toString());
+
+    String realStatement = sb.toString();
+
+    messager.printMessage(Diagnostic.Kind.NOTE, "Call: " + call.toString());
+    messager.printMessage(Diagnostic.Kind.NOTE, "Method: " + rmd.getName());
+    List<String> arguments = call.getArguments().stream().map(arg -> arg.toString())
+        .toList();
+    rmd.getTypeParameters().forEach(tp -> messager.printMessage(Diagnostic.Kind.NOTE, "TypeParam: " + tp));
     if (ACTIVITY_COMPENSATION_MAP.containsKey(rmd.getName())) {
       call.getScope().ifPresent(scope -> {
         String scopeStr = scope.toString();
@@ -366,13 +419,18 @@ public class SageProcessor extends AbstractProcessor {
             result.needCompensationCalls.add(
                 new CompensationCall(
                     ve.getSimpleName().toString(),
-                    ACTIVITY_COMPENSATION_MAP.get(rmd.getName())
+                    ACTIVITY_COMPENSATION_MAP.get(rmd.getName()),
+                    scopeStr,
+                    realStatement,
+                    arguments
                 )
             );
           }
         }
       });
+      return true;
     }
+    return false;
   }
 
   // ---------------------------------------------------
@@ -516,37 +574,27 @@ public class SageProcessor extends AbstractProcessor {
 
     // try { ... } catch (...)
     CodeBlock.Builder block = CodeBlock.builder()
-        .addStatement("try {")
-        .addStatement("  // Original Method Body Start");
-
-    // 원본 바디
-    String body = parsedResult.originalBody;
-    block.addStatement("  $L", formatBodyForCodeBlock(body));
-    block.addStatement("  // Original Method Body End");
+        .addStatement("try {");
 
     // 보상 로직 등록
     for (CompensationCall cc : parsedResult.needCompensationCalls) {
-      // [변경점]
-      //  - 필요시 input 을 저장해서 compensate에 넣을 수 있음.
-      block.addStatement(
-          "  saga.addCompensation(() -> { this.$N.$N(\"email get request\"); })",
-          cc.fieldName, // ex) "memberEmailGetActivity"
-          cc.compensationMethod // "compensate"
-      );
+      block.addStatement(cc.realStatement);
+      String args = String.join(", ", cc.arguments);
+      block.addStatement("  " + "saga.addCompensation(() -> " + cc.scope + ".compensate($N))", args);
     }
 
     // catch
     block
         .addStatement("} catch (Exception e) {")
-        .addStatement("  saga.compensate();")
-        .addStatement("  throw new RuntimeException(e);")
+        .addStatement("  saga.compensate()")
+        .addStatement("  throw new RuntimeException(e)")
         .addStatement("}");
 
     mb.addCode(block.build());
 
     // return
     if (!returnType.toString().equals("void")) {
-      mb.addStatement("return null // TODO: proper return");
+      mb.addStatement("return null");
     }
     return mb.build();
   }
@@ -558,18 +606,8 @@ public class SageProcessor extends AbstractProcessor {
     return s.substring(0, 1).toUpperCase() + s.substring(1);
   }
 
-  private String formatBodyForCodeBlock(String body) {
-    if (body == null) {
-      return "";
-    }
-    String trimmed = body.trim();
-    if (trimmed.startsWith("{")) {
-      trimmed = trimmed.substring(1);
-    }
-    if (trimmed.endsWith("}")) {
-      trimmed = trimmed.substring(0, trimmed.length() - 1);
-    }
-    return trimmed.trim();
+  private String getVariableName() {
+    return "var" + this.variableCount++;
   }
 
   // DTO
@@ -585,10 +623,16 @@ public class SageProcessor extends AbstractProcessor {
 
     final String fieldName;
     final String compensationMethod;
+    final String scope;
+    final String realStatement;
+    final List<String> arguments;
 
-    CompensationCall(String fieldName, String compensationMethod) {
+    CompensationCall(String fieldName, String compensationMethod, String scope, String realStatement, List<String> args) {
       this.fieldName = fieldName;
       this.compensationMethod = compensationMethod;
+      this.scope = scope;
+      this.realStatement = realStatement;
+      this.arguments = args;
     }
   }
 }
