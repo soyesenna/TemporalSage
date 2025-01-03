@@ -2,6 +2,7 @@ package com.senna.TemporalSage.context;
 
 import com.senna.TemporalSage.annotations.GeneratedWorkflow;
 import com.senna.TemporalSage.annotations.Workflowable;
+import com.senna.TemporalSage.saga.SagaActivity;
 import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
 import java.util.Arrays;
@@ -42,6 +43,16 @@ public class WorkerFactoryStartListener implements ApplicationListener<ContextRe
         Class<?> targetClass = AopUtils.getTargetClass(entry.getValue());
         Worker worker = this.workerFactory.newWorker(targetClass.getSimpleName());
         worker.registerWorkflowImplementationTypes(targetClass);
+      }
+
+      Map<String, SagaActivity> sagaActivityMap = this.applicationContext.getBeansOfType(
+          SagaActivity.class);
+
+      for (Map.Entry<String, SagaActivity> entry : sagaActivityMap.entrySet()) {
+        System.out.println(entry.getKey());
+        Class<?> targetClass = AopUtils.getTargetClass(entry.getValue());
+        Worker worker = this.workerFactory.newWorker(targetClass.getSimpleName());
+        worker.registerActivitiesImplementations(targetClass);
       }
 
       System.out.println("started worker factory");

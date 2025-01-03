@@ -95,8 +95,8 @@ public class OptionUtils {
 
     // 2) CodeBlock 빌더로 ActivityOptions 생성 코드를 작성
     return CodeBlock.builder()
-        .add("$T activityOptions = $T.newBuilder()\n",
-            ActivityOptions.class, ActivityOptions.class)
+        .add("$T $N = $T.newBuilder()\n",
+            ActivityOptions.class, taskQueue, ActivityOptions.class)
         .indent()
         // RetryOptions 설정
         .add(".setRetryOptions($T.newBuilder()\n", RetryOptions.class)

@@ -20,8 +20,10 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeS
 import com.google.auto.service.AutoService;
 import com.senna.TemporalSage.annotations.Determinism;
 import com.senna.TemporalSage.annotations.GeneratedWorkflow;
+import com.senna.TemporalSage.annotations.Option;
 import com.senna.TemporalSage.annotations.SageService;
 import com.senna.TemporalSage.annotations.Workflowable;
+import com.senna.TemporalSage.saga.SagaActivity;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
@@ -30,6 +32,7 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import io.temporal.workflow.Saga;
+import io.temporal.workflow.Workflow;
 import io.temporal.workflow.WorkflowInterface;
 import io.temporal.workflow.WorkflowMethod;
 import java.io.FileNotFoundException;
@@ -82,6 +85,8 @@ public class SageProcessor extends AbstractProcessor {
 
   private int variableCount = 0;
 
+  private ProcessingEnvironment processingEnv;
+
   // "execute" -> "compensate"
   private static final Map<String, String> ACTIVITY_COMPENSATION_MAP = new HashMap<>();
 
@@ -94,6 +99,7 @@ public class SageProcessor extends AbstractProcessor {
     super.init(processingEnv);
     this.messager = processingEnv.getMessager();
     this.filer = processingEnv.getFiler();
+    this.processingEnv = processingEnv;
 
     String sourcePathOption = processingEnv.getOptions().get("sourcepath");
     if (sourcePathOption != null) {
@@ -526,10 +532,10 @@ public class SageProcessor extends AbstractProcessor {
           .build();
       implBuilder.addField(fieldSpec);
     }
-    implBuilder.addField(
-        FieldSpec.builder(ActivityStubUtils.class, "activityStubUtils", Modifier.PRIVATE,
-                Modifier.FINAL)
-            .build());
+//    implBuilder.addField(
+//        FieldSpec.builder(ActivityStubUtils.class, "activityStubUtils", Modifier.PRIVATE,
+//                Modifier.FINAL)
+//            .build());
 
     // (2) 생성자에서 필드 초기화 or Activity Stub 생성
     implBuilder.addMethod(createConstructor(sagaActivityFields));
@@ -544,23 +550,37 @@ public class SageProcessor extends AbstractProcessor {
     MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
         .addModifiers(Modifier.PUBLIC);
 
-    ctor.addParameter(ActivityStubUtils.class, "activityStubUtils", Modifier.FINAL);
-    ctor.addStatement("this.activityStubUtils = activityStubUtils");
+//    ctor.addParameter(ActivityStubUtils.class, "activityStubUtils", Modifier.FINAL);
+//    ctor.addStatement("this.activityStubUtils = activityStubUtils");
 
     // [변경점]
     //  - 생성자 파라미터로 각 SagaActivity 인스턴스(혹은 Stub)를 받아서 필드에 할당
     //  - 예: public GetMemberEmailWorkflowInterfaceImpl(MemberEmailGetActivity memberEmailGetActivity) { ... }
     //        this.memberEmailGetActivity = memberEmailGetActivity; etc.
 
-    for (VariableElement field : sagaActivityFields) {
-      TypeName fieldType = TypeName.get(field.asType());
-      String fieldName = field.getSimpleName().toString();
+//    for (VariableElement field : sagaActivityFields) {
+//      TypeName fieldType = TypeName.get(field.asType());
+//      String fieldName = field.getSimpleName().toString();
+//
+//      // 파라미터 추가
+//      ctor.addParameter(fieldType, fieldName, Modifier.FINAL);
+//      // 필드에 할당
+//      ctor.addStatement("this.$N = $N", fieldName, fieldName);
+////      ctor.addStatement("this.$N = ($T) activityStubUtils.createActivityStub($T.class)", fieldName, fieldType, fieldType);
+//    }
 
-      // 파라미터 추가
-      ctor.addParameter(fieldType, fieldName, Modifier.FINAL);
-      // 필드에 할당
-      ctor.addStatement("this.$N = $N", fieldName, fieldName);
-//      ctor.addStatement("this.$N = ($T) activityStubUtils.createActivityStub($T.class)", fieldName, fieldType, fieldType);
+    for (VariableElement sagaActivityField : sagaActivityFields) {
+      Option options = sagaActivityField.asType().getAnnotation(Option.class);
+
+      TypeName fieldType = TypeName.get(sagaActivityField.asType());
+      String fieldName = sagaActivityField.getSimpleName().toString();
+
+      String taskQueue = ((ClassName) fieldType).getClass().getSimpleName();
+
+      ctor.addCode(OptionUtils.createActivityOptions(options, taskQueue));
+
+      ctor.addStatement("this.$N = $T.newActivityStub($T, $N)", fieldName, Workflow.class,
+          SagaActivity.class, taskQueue);
     }
 
     return ctor.build();

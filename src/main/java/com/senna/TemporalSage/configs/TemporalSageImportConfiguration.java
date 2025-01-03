@@ -16,10 +16,10 @@ import org.springframework.context.annotation.Import;
 
     // processor
     SageProcessor.class,
-    ActivityProcessor.class,
+//    ActivityProcessor.class,
 
     // utils
-    ActivityStubUtils.class,
+//    ActivityStubUtils.class,
 
     // aspect
     WorkflowableAspect.class,
