@@ -72,6 +72,10 @@ dependencies {
 	
 	// Temporal SDK
 	api 'io.temporal:temporal-sdk:1.17.0'
+	api 'io.temporal:temporal-serviceclient:1.17.0'
+
+	// aop
+	api 'org.springframework.boot:spring-boot-starter-aop'
 
 	api 'com.google.auto.service:auto-service:1.0.1'
 	annotationProcessor 'com.google.auto.service:auto-service:1.0.1'

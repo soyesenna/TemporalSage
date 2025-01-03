@@ -19,6 +19,7 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeS
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
 import com.google.auto.service.AutoService;
 import com.senna.TemporalSage.annotations.Determinism;
+import com.senna.TemporalSage.annotations.GeneratedWorkflow;
 import com.senna.TemporalSage.annotations.SageService;
 import com.senna.TemporalSage.annotations.Workflowable;
 import com.squareup.javapoet.ClassName;
@@ -267,8 +268,6 @@ public class SageProcessor extends AbstractProcessor {
               return result;
             }
           }
-        } catch (FileNotFoundException e) {
-          e.printStackTrace();
         } catch (Exception e) {
           e.printStackTrace();
         }
@@ -320,7 +319,13 @@ public class SageProcessor extends AbstractProcessor {
   ) {
     try {
       messager.printMessage(Diagnostic.Kind.NOTE, "analyzeCall: " + call.toString());
-      ResolvedMethodDeclaration rmd = call.resolve();
+      ResolvedMethodDeclaration rmd;
+      try {
+        rmd = call.resolve();
+      } catch (UnsolvedSymbolException unsolvedSymbolException) {
+        messager.printMessage(Kind.WARNING, "Unresolved symbol: %s".formatted(call.toString()));
+        return;
+      }
       String qName = rmd.getQualifiedName();
 
       if (!detectActivityCall(call, sagaActivityFields, rmd, result)) {
@@ -398,11 +403,13 @@ public class SageProcessor extends AbstractProcessor {
   ) {
     StringBuilder sb = new StringBuilder();
     if (!rmd.getReturnType().isVoid()) {
-      sb.append(rmd.getReturnType().describe()).append(" ").append(this.getVariableName()).append(" = ");
+      sb.append(rmd.getReturnType().describe()).append(" ").append(this.getVariableName()).append(" = (").append(rmd.getReturnType().describe()).append(")");
     }
 
-    sb.append(call.toString());
+    sb.append("this.activityStubUtils.createActivityStub(").append(rmd.getClassName()).append(".class).execute");
+//    sb.append(call.toString());
 
+    call.getArguments().forEach(arg -> sb.append("(").append(arg.toString()).append(")"));
     String realStatement = sb.toString();
 
     messager.printMessage(Diagnostic.Kind.NOTE, "Call: " + call.toString());
@@ -508,16 +515,21 @@ public class SageProcessor extends AbstractProcessor {
     TypeSpec.Builder implBuilder = TypeSpec.classBuilder(implName)
         .addModifiers(Modifier.PUBLIC)
         .addSuperinterface(ClassName.get("", interfaceName))
-        .addAnnotation(Component.class);
+        .addAnnotation(Component.class)
+        .addAnnotation(GeneratedWorkflow.class);
 
     // (1) SagaActivity 필드를 "private final"
     for (VariableElement field : sagaActivityFields) {
       TypeName fieldType = TypeName.get(field.asType());
       FieldSpec fieldSpec = FieldSpec.builder(fieldType, field.getSimpleName().toString())
-          .addModifiers(Modifier.PRIVATE, Modifier.FINAL) // [변경점] final
+          .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
           .build();
       implBuilder.addField(fieldSpec);
     }
+    implBuilder.addField(
+        FieldSpec.builder(ActivityStubUtils.class, "activityStubUtils", Modifier.PRIVATE,
+                Modifier.FINAL)
+            .build());
 
     // (2) 생성자에서 필드 초기화 or Activity Stub 생성
     implBuilder.addMethod(createConstructor(sagaActivityFields));
@@ -532,6 +544,9 @@ public class SageProcessor extends AbstractProcessor {
     MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
         .addModifiers(Modifier.PUBLIC);
 
+    ctor.addParameter(ActivityStubUtils.class, "activityStubUtils", Modifier.FINAL);
+    ctor.addStatement("this.activityStubUtils = activityStubUtils");
+
     // [변경점]
     //  - 생성자 파라미터로 각 SagaActivity 인스턴스(혹은 Stub)를 받아서 필드에 할당
     //  - 예: public GetMemberEmailWorkflowInterfaceImpl(MemberEmailGetActivity memberEmailGetActivity) { ... }
@@ -543,9 +558,9 @@ public class SageProcessor extends AbstractProcessor {
 
       // 파라미터 추가
       ctor.addParameter(fieldType, fieldName, Modifier.FINAL);
-
       // 필드에 할당
       ctor.addStatement("this.$N = $N", fieldName, fieldName);
+//      ctor.addStatement("this.$N = ($T) activityStubUtils.createActivityStub($T.class)", fieldName, fieldType, fieldType);
     }
 
     return ctor.build();
