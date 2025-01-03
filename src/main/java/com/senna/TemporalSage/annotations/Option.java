@@ -13,11 +13,11 @@ public @interface Option {
   // Timeouts (초 단위, 혹은 java.time.Duration을 직접 쓸 수도 있음)
   long startToCloseTimeoutSeconds() default 10;
   long scheduleToCloseTimeoutSeconds() default 30;
-  long scheduleToStartTimeoutSeconds() default 0;
-  long heartbeatTimeoutSeconds() default 0;
+  long scheduleToStartTimeoutSeconds() default 10;
+  long heartbeatTimeoutSeconds() default 10;
 
   // Retry 관련
-  int retryMaxAttempts() default 0;
+  int retryMaxAttempts() default 10;
   double retryBackoffCoefficient() default 2.0;
   long retryInitialIntervalSeconds() default 1;
   long retryMaximumIntervalSeconds() default 100;
