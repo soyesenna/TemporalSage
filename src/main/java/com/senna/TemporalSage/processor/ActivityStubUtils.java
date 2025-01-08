@@ -13,14 +13,11 @@ public class ActivityStubUtils {
 
   private final ApplicationContext applicationContext;
 
-  public SagaActivity createActivityStub(Class<? extends SagaActivity> activityInterfaceImpl) {
+  public SagaActivity createActivityStub(Class<? extends SagaActivity> activityInterfaceImpl, ActivityOptions activityOptions) {
     StringBuilder sb = new StringBuilder();
     sb.append(this.getMethodName(activityInterfaceImpl)).append("Options");
 
-    ActivityOptions activityOption = this.applicationContext.getBean(
-        sb.toString(), ActivityOptions.class);
-
-    return Workflow.newActivityStub(activityInterfaceImpl, activityOption);
+    return Workflow.newActivityStub(activityInterfaceImpl, activityOptions);
   }
 
   private String getMethodName(Class<? extends SagaActivity> activityInterfaceImpl) {

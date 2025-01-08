@@ -24,11 +24,13 @@ import com.senna.TemporalSage.annotations.Option;
 import com.senna.TemporalSage.annotations.SageService;
 import com.senna.TemporalSage.annotations.Workflowable;
 import com.senna.TemporalSage.saga.SagaActivity;
+import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import io.temporal.workflow.Saga;
@@ -45,6 +47,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javassist.bytecode.SignatureAttribute.ClassType;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.Messager;
@@ -66,6 +69,8 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.Diagnostic.Kind;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -409,13 +414,14 @@ public class SageProcessor extends AbstractProcessor {
   ) {
     StringBuilder sb = new StringBuilder();
     if (!rmd.getReturnType().isVoid()) {
-      sb.append(rmd.getReturnType().describe()).append(" ").append(this.getVariableName()).append(" = (").append(rmd.getReturnType().describe()).append(")");
+      sb.append(rmd.getReturnType().describe()).append(" ").append(this.getVariableName())
+          .append(" = ");
     }
 
-    sb.append("this.activityStubUtils.createActivityStub(").append(rmd.getClassName()).append(".class).execute");
-//    sb.append(call.toString());
+//    sb.append("this.activityStubUtils.createActivityStub(").append(rmd.getClassName()).append(".class).execute");
+    sb.append(call.toString());
 
-    call.getArguments().forEach(arg -> sb.append("(").append(arg.toString()).append(")"));
+//    call.getArguments().forEach(arg -> sb.append("(").append(arg.toString()).append(")"));
     String realStatement = sb.toString();
 
     messager.printMessage(Diagnostic.Kind.NOTE, "Call: " + call.toString());
@@ -527,8 +533,27 @@ public class SageProcessor extends AbstractProcessor {
     // (1) SagaActivity 필드를 "private final"
     for (VariableElement field : sagaActivityFields) {
       TypeName fieldType = TypeName.get(field.asType());
-      FieldSpec fieldSpec = FieldSpec.builder(fieldType, field.getSimpleName().toString())
+      TypeElement typeElement = this.processingEnv.getElementUtils()
+          .getTypeElement(fieldType.toString());
+
+      TypeName sagaActivityInterfaceTypeName = ClassName.get(SagaActivity.class);
+      for (TypeMirror tm : typeElement.getInterfaces()) {
+        if (tm instanceof DeclaredType) {
+          DeclaredType declared = (DeclaredType) tm;
+          // 제네릭 파라미터
+          List<? extends TypeMirror> typeArgs = declared.getTypeArguments();
+          if (typeArgs.size() == 2) {
+            ClassName className = ClassName.get(SagaActivity.class);
+            TypeName genericParam = ClassName.get(typeArgs.get(0));
+            TypeName geneticReturn = ClassName.get(typeArgs.get(1));
+            sagaActivityInterfaceTypeName = ParameterizedTypeName.get(className, genericParam, geneticReturn);
+          }
+        }
+      }
+
+      FieldSpec fieldSpec = FieldSpec.builder(sagaActivityInterfaceTypeName, field.getSimpleName().toString())
           .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+//          .addAnnotation(AnnotationSpec.builder(Qualifier.class).addMember("value", "$S", this.toLowerFirst(className.simpleName())).build())
           .build();
       implBuilder.addField(fieldSpec);
     }
@@ -539,11 +564,35 @@ public class SageProcessor extends AbstractProcessor {
 
     // (2) 생성자에서 필드 초기화 or Activity Stub 생성
     implBuilder.addMethod(createConstructor(sagaActivityFields));
+    implBuilder.addMethod(createDefaultConstructor(sagaActivityFields));
 
     // (3) 워크플로 메서드
     implBuilder.addMethod(createWorkflowMethodImpl(methodElement, methodName, parsedResult));
 
     return implBuilder.build();
+  }
+
+  private MethodSpec createDefaultConstructor(List<VariableElement> sagaActivityFields) {
+    MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
+        .addModifiers(Modifier.PUBLIC)
+        .addAnnotation(Autowired.class);
+
+//     [변경점]
+//      - 생성자 파라미터로 각 SagaActivity 인스턴스(혹은 Stub)를 받아서 필드에 할당
+//      - 예: public GetMemberEmailWorkflowInterfaceImpl(MemberEmailGetActivity memberEmailGetActivity) { ... }
+//            this.memberEmailGetActivity = memberEmailGetActivity; etc.
+
+    for (VariableElement field : sagaActivityFields) {
+      TypeName fieldType = TypeName.get(field.asType());
+      String fieldName = field.getSimpleName().toString();
+
+      // 파라미터 추가
+      ctor.addParameter(fieldType, fieldName, Modifier.FINAL);
+      // 필드에 할당
+      ctor.addStatement("this.$N = $N", fieldName, fieldName);
+    }
+
+    return ctor.build();
   }
 
   private MethodSpec createConstructor(List<VariableElement> sagaActivityFields) {
@@ -575,12 +624,24 @@ public class SageProcessor extends AbstractProcessor {
       TypeName fieldType = TypeName.get(sagaActivityField.asType());
       String fieldName = sagaActivityField.getSimpleName().toString();
 
-      String taskQueue = ((ClassName) fieldType).getClass().getSimpleName();
+      TypeElement typeElement = this.processingEnv.getElementUtils()
+          .getTypeElement(fieldType.toString());
+      String taskQueue = ((ClassName) fieldType).simpleName();
 
       ctor.addCode(OptionUtils.createActivityOptions(options, taskQueue));
-
-      ctor.addStatement("this.$N = $T.newActivityStub($T, $N)", fieldName, Workflow.class,
-          SagaActivity.class, taskQueue);
+      for (TypeMirror tm : typeElement.getInterfaces()) {
+        if (tm instanceof DeclaredType) {
+          DeclaredType declared = (DeclaredType) tm;
+          // 제네릭 파라미터
+          List<? extends TypeMirror> typeArgs = declared.getTypeArguments();
+          if (typeArgs.size() == 2) {
+            TypeName genericParam = ClassName.get(typeArgs.get(0));
+            TypeName geneticReturn = ClassName.get(typeArgs.get(1));
+            ctor.addStatement("this.$N = ($T<$T, $T>)$T.newActivityStub($T.class, $N)", fieldName, SagaActivity.class, genericParam, geneticReturn, Workflow.class,
+                SagaActivity.class, taskQueue);
+          }
+        }
+      }
     }
 
     return ctor.build();
@@ -632,6 +693,13 @@ public class SageProcessor extends AbstractProcessor {
       mb.addStatement("return null");
     }
     return mb.build();
+  }
+
+  private String toLowerFirst(String s) {
+    if (s == null || s.isEmpty()) {
+      return s;
+    }
+    return s.substring(0, 1).toLowerCase() + s.substring(1);
   }
 
   private String toUpperFirst(String s) {

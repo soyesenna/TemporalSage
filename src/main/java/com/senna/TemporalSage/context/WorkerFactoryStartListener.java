@@ -41,6 +41,7 @@ public class WorkerFactoryStartListener implements ApplicationListener<ContextRe
       for (Map.Entry<String, Object> entry : beansWithAnnotation.entrySet()) {
         System.out.println(entry.getKey());
         Class<?> targetClass = AopUtils.getTargetClass(entry.getValue());
+        // task queue
         Worker worker = this.workerFactory.newWorker(targetClass.getSimpleName());
         worker.registerWorkflowImplementationTypes(targetClass);
       }
@@ -52,7 +53,7 @@ public class WorkerFactoryStartListener implements ApplicationListener<ContextRe
         System.out.println(entry.getKey());
         Class<?> targetClass = AopUtils.getTargetClass(entry.getValue());
         Worker worker = this.workerFactory.newWorker(targetClass.getSimpleName());
-        worker.registerActivitiesImplementations(targetClass);
+        worker.registerActivitiesImplementations(entry.getValue());
       }
 
       System.out.println("started worker factory");
