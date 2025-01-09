@@ -48,10 +48,8 @@ public class SageProcessor extends AbstractProcessor {
   private final List<Path> classPaths = new ArrayList<>();
   private CombinedTypeSolver combinedTypeSolver;
 
-  // 로컬에서 변수 이름을 위한 카운터 (주어진 로직 그대로 유지)
   private int variableCount = 0;
 
-  // "execute" -> "compensate" 매핑 (주어진 로직 그대로 유지)
   private static final Map<String, String> ACTIVITY_COMPENSATION_MAP = new HashMap<>();
   static {
     ACTIVITY_COMPENSATION_MAP.put("execute", "compensate");
@@ -64,7 +62,6 @@ public class SageProcessor extends AbstractProcessor {
     this.filer = processingEnv.getFiler();
     this.processingEnv = processingEnv;
 
-    // 경로 설정 로직 (주어진 로직 그대로 유지)
     String sourcePathOption = processingEnv.getOptions().get("sourcepath");
     if (sourcePathOption != null) {
       String[] paths = sourcePathOption.split(":");
@@ -81,7 +78,6 @@ public class SageProcessor extends AbstractProcessor {
       }
     }
 
-    // 심볼 리졸버 설정 (주어진 로직 그대로 유지)
     combinedTypeSolver = new CombinedTypeSolver();
     combinedTypeSolver.add(new ReflectionTypeSolver());
     for (Path sp : sourcePaths) {
@@ -156,9 +152,6 @@ public class SageProcessor extends AbstractProcessor {
     return false;
   }
 
-  /**
-   * 변수 이름을 생성하기 위한 메서드 (원래 로직 유지)
-   */
   private String getVariableName() {
     return "var" + this.variableCount++;
   }

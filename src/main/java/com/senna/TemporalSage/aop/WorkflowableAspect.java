@@ -1,7 +1,5 @@
 package com.senna.TemporalSage.aop;
 
-import static com.google.auto.common.MoreElements.isAnnotationPresent;
-
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.workflow.WorkflowInterface;
@@ -50,8 +48,6 @@ public class WorkflowableAspect {
     Object stub = this.workflowClient.newWorkflowStub(workflowInterface, workflowOptions);
 
     return stub.getClass().getDeclaredMethod(signature.getName(), signature.getParameterTypes()).invoke(stub, proceedingJoinPoint.getArgs());
-
-//    return bean.getClass().getDeclaredMethod(signature.getName(), signature.getParameterTypes()).invoke(bean, proceedingJoinPoint.getArgs());
   }
 
   private String getBeanName(String methodName) {

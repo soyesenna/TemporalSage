@@ -1,5 +1,6 @@
 package com.senna.TemporalSage.processor;
 
+import com.senna.TemporalSage.saga.SagaActivity;
 import java.util.ArrayList;
 import java.util.List;
 import javax.annotation.processing.Messager;
@@ -13,17 +14,11 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 
-import com.senna.TemporalSage.saga.SagaActivity;
-
 public class SagaActivityFieldFinder {
 
   private SagaActivityFieldFinder() {
-    // util 클래스 - 인스턴스화 방지
   }
 
-  /**
-   * SagaActivity 필드를 찾아 리스트로 반환한다.
-   */
   public static List<VariableElement> findSagaActivityFields(TypeElement sagaServiceType, Messager messager) {
     List<VariableElement> fields = new ArrayList<>();
     for (Element enclosed : sagaServiceType.getEnclosedElements()) {
@@ -36,9 +31,6 @@ public class SagaActivityFieldFinder {
     return fields;
   }
 
-  /**
-   * 해당 필드가 SagaActivity를 구현하는지 판별한다.
-   */
   private static boolean isSagaActivity(VariableElement field, Messager messager) {
     TypeMirror type = field.asType();
     if (type.getKind() == TypeKind.DECLARED) {
@@ -71,9 +63,6 @@ public class SagaActivityFieldFinder {
     return false;
   }
 
-  /**
-   * @io.temporal.activity.ActivityInterface 가 붙어있는지 확인
-   */
   private static boolean hasActivityInterfaceAnnotation(TypeElement ifaceTypeElement, Messager messager) {
     List<? extends AnnotationMirror> annotationMirrors = ifaceTypeElement.getAnnotationMirrors();
     return annotationMirrors.stream().anyMatch(mirror -> {

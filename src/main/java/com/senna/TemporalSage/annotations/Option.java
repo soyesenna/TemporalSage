@@ -21,7 +21,4 @@ public @interface Option {
   double retryBackoffCoefficient() default 2.0;
   long retryInitialIntervalSeconds() default 1;
   long retryMaximumIntervalSeconds() default 100;
-
-  // Wait for cancellation
-  boolean waitForCancellation() default false;
 }
