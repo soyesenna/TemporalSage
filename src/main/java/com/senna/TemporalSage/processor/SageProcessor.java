@@ -24,7 +24,6 @@ import com.senna.TemporalSage.annotations.Option;
 import com.senna.TemporalSage.annotations.SageService;
 import com.senna.TemporalSage.annotations.Workflowable;
 import com.senna.TemporalSage.saga.SagaActivity;
-import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
@@ -37,7 +36,6 @@ import io.temporal.workflow.Saga;
 import io.temporal.workflow.Workflow;
 import io.temporal.workflow.WorkflowInterface;
 import io.temporal.workflow.WorkflowMethod;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,7 +45,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javassist.bytecode.SignatureAttribute.ClassType;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.Messager;
@@ -70,7 +67,6 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.Diagnostic.Kind;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -153,7 +149,6 @@ public class SageProcessor extends AbstractProcessor {
       }
       TypeElement sagaServiceType = (TypeElement) e;
 
-      // (A) SagaActivity 필드 스캔
       List<VariableElement> sagaActivityFields = findSagaActivityFields(sagaServiceType);
 
       if (sagaActivityFields.isEmpty()) {
@@ -161,7 +156,6 @@ public class SageProcessor extends AbstractProcessor {
             "SagaActivity fields are not found, Is it workflow?", e);
       }
 
-      // (B) @Workflowable 메서드 스캔
       for (Element enclosed : sagaServiceType.getEnclosedElements()) {
         if (enclosed instanceof ExecutableElement) {
           ExecutableElement methodElement = (ExecutableElement) enclosed;
@@ -170,7 +164,6 @@ public class SageProcessor extends AbstractProcessor {
             ParsedMethodResult result =
                 parseAndAnalyzeMethod(sagaServiceType, methodElement, sagaActivityFields);
 
-            // 생성된 코드 작성
             this.generateWorkflowCode(sagaServiceType, methodElement, sagaActivityFields, result);
           }
         }
@@ -212,18 +205,14 @@ public class SageProcessor extends AbstractProcessor {
             boolean isSagaActivityInterface = ifaceTypeElement.getSimpleName().toString()
                 .equals("SagaActivity");
 
-            // 1. 인터페이스의 모든 어노테이션 Mirror 확인
             List<? extends AnnotationMirror> annotationMirrors = ifaceTypeElement.getAnnotationMirrors();
 
-            // 2. 원하는 어노테이션이 있는지 검사
             boolean hasActivityAnnotation = annotationMirrors.stream().anyMatch(mirror -> {
-              // AnnotationMirror에서 어노테이션 타입 Element 추출
               Element annotationTypeElement = mirror.getAnnotationType().asElement();
               if (annotationTypeElement instanceof TypeElement) {
                 TypeElement annoTypeElem = (TypeElement) annotationTypeElement;
                 messager.printMessage(Diagnostic.Kind.NOTE,
                     "Annotation: " + annoTypeElem.getQualifiedName());
-                // FQCN이 targetAnnotationFqcn과 같은지 비교
                 return annoTypeElem.getQualifiedName()
                     .contentEquals("io.temporal.activity.ActivityInterface");
               }
@@ -345,14 +334,6 @@ public class SageProcessor extends AbstractProcessor {
           result.hasDeterminismError = true;
           result.determinismErrors.add("Non-deterministic call: " + qName);
         }
-
-        // Temporal/Cadence
-        if (isTemporalDeterministicMethod(rmd)) {
-          // OK
-        } else if (isSystemNonDeterministicMethod(rmd)) {
-          result.hasDeterminismError = true;
-          result.determinismErrors.add("System call is non-deterministic: " + qName);
-        }
       }
 
     } catch (UnsolvedSymbolException ex) {
@@ -371,18 +352,15 @@ public class SageProcessor extends AbstractProcessor {
     return hasDeterminismAnnotation(container);
   }
 
-  // [변경점] @Determinism 인식을 JavaParserMethodDeclaration 기반으로 수정
   private boolean hasDeterminismAnnotation(ResolvedMethodDeclaration rmd) {
     if (rmd instanceof JavaParserMethodDeclaration) {
       JavaParserMethodDeclaration jpm = (JavaParserMethodDeclaration) rmd;
-      // 메서드에 직접 달려있는지 확인
       for (AnnotationExpr ann : jpm.getWrappedNode().getAnnotations()) {
         String qName = ann.getName().toString();
         if (Determinism.class.getCanonicalName().equals(qName)) {
           return true;
         }
       }
-      // 또는, declaringType
       if (hasDeterminismAnnotation(jpm.declaringType())) {
         return true;
       }
@@ -392,18 +370,6 @@ public class SageProcessor extends AbstractProcessor {
 
   private boolean hasDeterminismAnnotation(ResolvedReferenceTypeDeclaration typeDecl) {
     return typeDecl.hasAnnotation(Determinism.class.getCanonicalName());
-  }
-
-  private boolean isTemporalDeterministicMethod(ResolvedMethodDeclaration rmd) {
-    String qName = rmd.getQualifiedName();
-    return qName.startsWith("io.temporal.workflow.Workflow.")
-        && rmd.getName().equals("currentTimeMillis");
-  }
-
-  private boolean isSystemNonDeterministicMethod(ResolvedMethodDeclaration rmd) {
-    String qName = rmd.getQualifiedName();
-    return (qName.equals("java.lang.System.currentTimeMillis")
-        || qName.equals("java.lang.System.nanoTime"));
   }
 
   private boolean detectActivityCall(
@@ -418,10 +384,8 @@ public class SageProcessor extends AbstractProcessor {
           .append(" = ");
     }
 
-//    sb.append("this.activityStubUtils.createActivityStub(").append(rmd.getClassName()).append(".class).execute");
     sb.append(call.toString());
 
-//    call.getArguments().forEach(arg -> sb.append("(").append(arg.toString()).append(")"));
     String realStatement = sb.toString();
 
     messager.printMessage(Diagnostic.Kind.NOTE, "Call: " + call.toString());
@@ -514,8 +478,6 @@ public class SageProcessor extends AbstractProcessor {
     return b.build();
   }
 
-  // [변경점] 여기서 "private final <Activity>" + 생성자에 주입
-  //         Saga 생성 시 constructor parameter 설정도 예시
   private TypeSpec createWorkflowImplSpec(
       String implName,
       String interfaceName,
@@ -530,7 +492,6 @@ public class SageProcessor extends AbstractProcessor {
         .addAnnotation(Component.class)
         .addAnnotation(GeneratedWorkflow.class);
 
-    // (1) SagaActivity 필드를 "private final"
     for (VariableElement field : sagaActivityFields) {
       TypeName fieldType = TypeName.get(field.asType());
       TypeElement typeElement = this.processingEnv.getElementUtils()
@@ -553,20 +514,13 @@ public class SageProcessor extends AbstractProcessor {
 
       FieldSpec fieldSpec = FieldSpec.builder(sagaActivityInterfaceTypeName, field.getSimpleName().toString())
           .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-//          .addAnnotation(AnnotationSpec.builder(Qualifier.class).addMember("value", "$S", this.toLowerFirst(className.simpleName())).build())
           .build();
       implBuilder.addField(fieldSpec);
     }
-//    implBuilder.addField(
-//        FieldSpec.builder(ActivityStubUtils.class, "activityStubUtils", Modifier.PRIVATE,
-//                Modifier.FINAL)
-//            .build());
 
-    // (2) 생성자에서 필드 초기화 or Activity Stub 생성
     implBuilder.addMethod(createConstructor(sagaActivityFields));
     implBuilder.addMethod(createDefaultConstructor(sagaActivityFields));
 
-    // (3) 워크플로 메서드
     implBuilder.addMethod(createWorkflowMethodImpl(methodElement, methodName, parsedResult));
 
     return implBuilder.build();
@@ -576,11 +530,6 @@ public class SageProcessor extends AbstractProcessor {
     MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
         .addModifiers(Modifier.PUBLIC)
         .addAnnotation(Autowired.class);
-
-//     [변경점]
-//      - 생성자 파라미터로 각 SagaActivity 인스턴스(혹은 Stub)를 받아서 필드에 할당
-//      - 예: public GetMemberEmailWorkflowInterfaceImpl(MemberEmailGetActivity memberEmailGetActivity) { ... }
-//            this.memberEmailGetActivity = memberEmailGetActivity; etc.
 
     for (VariableElement field : sagaActivityFields) {
       TypeName fieldType = TypeName.get(field.asType());
@@ -598,25 +547,6 @@ public class SageProcessor extends AbstractProcessor {
   private MethodSpec createConstructor(List<VariableElement> sagaActivityFields) {
     MethodSpec.Builder ctor = MethodSpec.constructorBuilder()
         .addModifiers(Modifier.PUBLIC);
-
-//    ctor.addParameter(ActivityStubUtils.class, "activityStubUtils", Modifier.FINAL);
-//    ctor.addStatement("this.activityStubUtils = activityStubUtils");
-
-    // [변경점]
-    //  - 생성자 파라미터로 각 SagaActivity 인스턴스(혹은 Stub)를 받아서 필드에 할당
-    //  - 예: public GetMemberEmailWorkflowInterfaceImpl(MemberEmailGetActivity memberEmailGetActivity) { ... }
-    //        this.memberEmailGetActivity = memberEmailGetActivity; etc.
-
-//    for (VariableElement field : sagaActivityFields) {
-//      TypeName fieldType = TypeName.get(field.asType());
-//      String fieldName = field.getSimpleName().toString();
-//
-//      // 파라미터 추가
-//      ctor.addParameter(fieldType, fieldName, Modifier.FINAL);
-//      // 필드에 할당
-//      ctor.addStatement("this.$N = $N", fieldName, fieldName);
-////      ctor.addStatement("this.$N = ($T) activityStubUtils.createActivityStub($T.class)", fieldName, fieldType, fieldType);
-//    }
 
     for (VariableElement sagaActivityField : sagaActivityFields) {
       Option options = sagaActivityField.asType().getAnnotation(Option.class);
@@ -647,7 +577,6 @@ public class SageProcessor extends AbstractProcessor {
     return ctor.build();
   }
 
-  // [변경점] Saga 생성 시 옵션 파라미터, 보상 로직 추가
   private MethodSpec createWorkflowMethodImpl(
       ExecutableElement methodElement,
       String methodName,
@@ -663,16 +592,12 @@ public class SageProcessor extends AbstractProcessor {
       mb.addParameter(TypeName.get(ve.asType()), ve.getSimpleName().toString(), Modifier.FINAL);
     }
 
-    // (1) Saga 인스턴스 생성 (파라미터 예시)
-    // [변경점]
     mb.addStatement("$T saga = new $T(new $T.Builder().build())",
         Saga.class, Saga.class, Saga.Options.class);
 
-    // try { ... } catch (...)
     CodeBlock.Builder block = CodeBlock.builder()
         .addStatement("try {");
 
-    // 보상 로직 등록
     for (CompensationCall cc : parsedResult.needCompensationCalls) {
       block.addStatement(cc.realStatement);
       String args = String.join(", ", cc.arguments);
@@ -693,13 +618,6 @@ public class SageProcessor extends AbstractProcessor {
       mb.addStatement("return null");
     }
     return mb.build();
-  }
-
-  private String toLowerFirst(String s) {
-    if (s == null || s.isEmpty()) {
-      return s;
-    }
-    return s.substring(0, 1).toLowerCase() + s.substring(1);
   }
 
   private String toUpperFirst(String s) {
