@@ -1,7 +1,7 @@
 package com.senna.TemporalSage.processor;
 
 import com.senna.TemporalSage.annotations.GeneratedWorkflow;
-import com.senna.TemporalSage.annotations.Option;
+import com.senna.TemporalSage.annotations.SageActivity;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
@@ -99,7 +99,6 @@ public class WorkflowCodeGenerator {
         .addAnnotation(WorkflowMethod.class)
         .returns(TypeName.get(methodElement.getReturnType()));
 
-    // 파라미터 추가
     for (VariableElement ve : methodElement.getParameters()) {
       builder.addParameter(TypeName.get(ve.asType()), ve.getSimpleName().toString(), Modifier.FINAL);
     }
@@ -178,7 +177,7 @@ public class WorkflowCodeGenerator {
     MethodSpec.Builder ctor = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
 
     for (VariableElement sagaActivityField : sagaActivityFields) {
-      Option options = sagaActivityField.asType().getAnnotation(Option.class);
+      SageActivity options = sagaActivityField.asType().getAnnotation(SageActivity.class);
 
       TypeName fieldType = TypeName.get(sagaActivityField.asType());
       String fieldName = sagaActivityField.getSimpleName().toString();

@@ -1,10 +1,9 @@
 package com.senna.TemporalSage.processor;
 
-import com.senna.TemporalSage.annotations.Option;
+import com.senna.TemporalSage.annotations.SageActivity;
 import com.squareup.javapoet.CodeBlock;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.common.RetryOptions;
-
 import java.lang.reflect.Method;
 import java.time.Duration;
 
@@ -12,62 +11,62 @@ public class OptionUtils {
 
   private static Object getAnnotationDefaultValue(String methodName) {
     try {
-      Method method = Option.class.getMethod(methodName);
+      Method method = SageActivity.class.getMethod(methodName);
       return method.getDefaultValue();
     } catch (NoSuchMethodException e) {
       throw new RuntimeException(e);
     }
   }
 
-  private static int getRetryMaxAttempts(Option options) {
+  private static int getRetryMaxAttempts(SageActivity options) {
     return (options != null)
         ? options.retryMaxAttempts()
         : (int) getAnnotationDefaultValue("retryMaxAttempts");
   }
 
-  private static double getRetryBackoffCoefficient(Option options) {
+  private static double getRetryBackoffCoefficient(SageActivity options) {
     return (options != null)
         ? options.retryBackoffCoefficient()
         : (double) getAnnotationDefaultValue("retryBackoffCoefficient");
   }
 
-  private static long getRetryInitialIntervalSeconds(Option options) {
+  private static long getRetryInitialIntervalSeconds(SageActivity options) {
     return (options != null)
         ? options.retryInitialIntervalSeconds()
         : (long) getAnnotationDefaultValue("retryInitialIntervalSeconds");
   }
 
-  private static long getRetryMaximumIntervalSeconds(Option options) {
+  private static long getRetryMaximumIntervalSeconds(SageActivity options) {
     return (options != null)
         ? options.retryMaximumIntervalSeconds()
         : (long) getAnnotationDefaultValue("retryMaximumIntervalSeconds");
   }
 
-  private static long getHeartbeatTimeoutSeconds(Option options) {
+  private static long getHeartbeatTimeoutSeconds(SageActivity options) {
     return (options != null)
         ? options.heartbeatTimeoutSeconds()
         : (long) getAnnotationDefaultValue("heartbeatTimeoutSeconds");
   }
 
-  private static long getStartToCloseTimeoutSeconds(Option options) {
+  private static long getStartToCloseTimeoutSeconds(SageActivity options) {
     return (options != null)
         ? options.startToCloseTimeoutSeconds()
         : (long) getAnnotationDefaultValue("startToCloseTimeoutSeconds");
   }
 
-  private static long getScheduleToCloseTimeoutSeconds(Option options) {
+  private static long getScheduleToCloseTimeoutSeconds(SageActivity options) {
     return (options != null)
         ? options.scheduleToCloseTimeoutSeconds()
         : (long) getAnnotationDefaultValue("scheduleToCloseTimeoutSeconds");
   }
 
-  private static long getScheduleToStartTimeoutSeconds(Option options) {
+  private static long getScheduleToStartTimeoutSeconds(SageActivity options) {
     return (options != null)
         ? options.scheduleToStartTimeoutSeconds()
         : (long) getAnnotationDefaultValue("scheduleToStartTimeoutSeconds");
   }
 
-  public static CodeBlock createActivityOptions(Option options, String taskQueue) {
+  public static CodeBlock createActivityOptions(SageActivity options, String taskQueue) {
     int retryMaxAttempts = getRetryMaxAttempts(options);
     double backoffCoefficient = getRetryBackoffCoefficient(options);
     long retryInitialInterval = getRetryInitialIntervalSeconds(options);
